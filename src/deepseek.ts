@@ -25,7 +25,7 @@ export class DeepSeekAPI {
     this.apiUrl = apiUrl;
   }
 
-  async chat(messages: DeepSeekMessage[]): Promise<string> {
+  async chat(messages: DeepSeekMessage[], maxTokens: number = 2000): Promise<string> {
     const response = await fetch(`${this.apiUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: {
@@ -36,7 +36,7 @@ export class DeepSeekAPI {
         model: 'deepseek-chat',
         messages,
         temperature: 0.7,
-        max_tokens: 2000
+        max_tokens: maxTokens
       })
     });
 
@@ -80,8 +80,8 @@ Format: Use paragraphs, not bullet points. Keep it under 400 words.`;
 
 ${virtueList}
 
-My primary virtue is ${virtueNames[primaryVirtue as keyof typeof virtueNames]} (${percentages[primaryVirtue as keyof typeof VirtueScores]}%).
-My secondary virtue is ${virtueNames[secondaryVirtue as keyof typeof virtueNames]} (${percentages[secondaryVirtue as keyof typeof VirtueScores]}%).
+My primary virtue is ${virtueNames[primaryVirtue as keyof typeof virtueNames]} (${percentages[primaryVirtue as keyof typeof percentages]}%).
+My secondary virtue is ${virtueNames[secondaryVirtue as keyof typeof virtueNames]} (${percentages[secondaryVirtue as keyof typeof percentages]}%).
 
 Please provide a deep, personalized analysis of my soul virtues profile. Help me understand what these scores mean for my life, relationships, and personal growth.`;
 
@@ -142,6 +142,6 @@ Please provide a structured plan that helps them develop this virtue through dai
     return this.chat([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
-    ]);
+    ], 4000);
   }
 }
