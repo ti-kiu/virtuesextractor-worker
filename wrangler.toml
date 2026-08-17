@@ -1,0 +1,10 @@
+name = "soulvirtues-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+DEEPSEEK_API_URL = "https://api.deepseek.com"
+
+[[kv_namespaces]]
+binding = "QUIZ_KV"
+id = "71a47679df18481abf4d434a5ec67b82"
