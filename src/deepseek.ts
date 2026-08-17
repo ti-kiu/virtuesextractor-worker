@@ -144,4 +144,144 @@ Please provide a structured plan that helps them develop this virtue through dai
       { role: 'user', content: userPrompt }
     ], 4000);
   }
+
+  // Generate couple compatibility report
+  async generateCoupleMatchReport(
+    profileAPercentages: VirtueScores,
+    profileAName: string,
+    profileBPercentages: VirtueScores,
+    profileBName: string
+  ): Promise<string> {
+    const formatProfile = (name: string, pcts: VirtueScores) => {
+      const sorted = Object.entries(pcts).sort(([, a], [, b]) => b - a);
+      const list = sorted
+        .map(([v, pct]) => `${virtueNames[v as keyof typeof virtueNames]}: ${pct}%`)
+        .join('\n');
+      return `${name}:\n${list}`;
+    };
+
+    const systemPrompt = `You are a relationship compatibility analyst specializing in virtue-based soul connections. Your role is to analyze how two people's soul virtue profiles complement each other.
+
+Your analysis should:
+1. Highlight complementary virtues and how they strengthen the relationship
+2. Identify potential friction points where virtues may clash
+3. Explain how each person's strengths can support the other's growth
+4. Provide a compatibility summary with specific insights
+5. Offer practical advice for deepening the connection
+
+Be warm, insightful, and encouraging. Use metaphors that resonate with the "soul connection" theme.
+Keep the tone conversational but profound. Format in paragraphs, not bullet points. Under 500 words.`;
+
+    const userPrompt = `Here are the soul virtue profiles of two people:
+
+${formatProfile(profileAName, profileAPercentages)}
+
+${formatProfile(profileBName, profileBPercentages)}
+
+Please provide a deep compatibility analysis. How do their virtue profiles complement each other? What are the strengths of this connection? What should they be mindful of?`;
+
+    return this.chat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]);
+  }
+
+  // Generate family circle report
+  async generateFamilyReport(
+    profiles: { name: string; percentages: VirtueScores }[]
+  ): Promise<string> {
+    const formatProfile = (p: { name: string; percentages: VirtueScores }) => {
+      const sorted = Object.entries(p.percentages).sort(([, a], [, b]) => b - a);
+      const list = sorted
+        .map(([v, pct]) => `  ${virtueNames[v as keyof typeof virtueNames]}: ${pct}%`)
+        .join('\n');
+      return `${p.name}:\n${list}`;
+    };
+
+    const profileList = profiles.map(formatProfile).join('\n\n');
+
+    const systemPrompt = `You are a family dynamics analyst specializing in virtue-based soul connections. Your role is to analyze how a family's virtue profiles create a unique family dynamic.
+
+Your analysis should:
+1. Identify the family's collective strengths (shared high virtues)
+2. Highlight how each member's unique virtues contribute to the family
+3. Identify potential areas of tension and how to navigate them
+4. Describe the family's overall "soul signature"
+5. Provide actionable advice for family harmony and mutual growth
+
+Be warm, celebratory, and insightful. Use metaphors that resonate with the "soul family" theme.
+Keep the tone conversational but profound. Format in paragraphs, not bullet points. Under 600 words.`;
+
+    const userPrompt = `Here are the soul virtue profiles of a family:
+
+${profileList}
+
+Please analyze this family's virtue dynamics. How do their profiles complement each other? What is the family's collective strength? How can they support each other's growth?`;
+
+    return this.chat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], 3000);
+  }
+
+  // Generate team building report
+  async generateTeamReport(
+    profiles: { name: string; percentages: VirtueScores }[]
+  ): Promise<string> {
+    const formatProfile = (p: { name: string; percentages: VirtueScores }) => {
+      const sorted = Object.entries(p.percentages).sort(([, a], [, b]) => b - a);
+      const top3 = sorted.slice(0, 3)
+        .map(([v, pct]) => `${virtueNames[v as keyof typeof virtueNames]}: ${pct}%`)
+        .join(', ');
+      return `${p.name} — Top: ${top3}`;
+    };
+
+    const profileList = profiles.map(formatProfile).join('\n');
+
+    // Calculate team averages
+    const teamAverages: VirtueScores = {
+      determination: 0, bravery: 0, justice: 0, kindness: 0,
+      patience: 0, integrity: 0, perseverance: 0
+    };
+    for (const p of profiles) {
+      for (const key of Object.keys(teamAverages) as (keyof VirtueScores)[]) {
+        teamAverages[key] += p.percentages[key];
+      }
+    }
+    for (const key of Object.keys(teamAverages) as (keyof VirtueScores)[]) {
+      teamAverages[key] = Math.round(teamAverages[key] / profiles.length);
+    }
+    const avgSorted = Object.entries(teamAverages).sort(([, a], [, b]) => b - a);
+    const teamStrengths = avgSorted.slice(0, 3)
+      .map(([v, pct]) => `${virtueNames[v as keyof typeof virtueNames]}: ${pct}% avg`)
+      .join(', ');
+    const teamWeaknesses = avgSorted.slice(-2)
+      .map(([v, pct]) => `${virtueNames[v as keyof typeof virtueNames]}: ${pct}% avg`)
+      .join(', ');
+
+    const systemPrompt = `You are a team dynamics analyst specializing in virtue-based team composition. Your role is to analyze how a team's collective virtue profiles affect team performance and dynamics.
+
+Your analysis should:
+1. Identify the team's collective strengths and how they manifest at work
+2. Highlight each member's unique contribution to the team
+3. Identify gaps or areas where the team may need external support
+4. Suggest optimal role alignments based on virtue profiles
+5. Provide actionable team-building recommendations
+
+Be professional yet warm, insightful, and practical. Format in paragraphs, not bullet points. Under 500 words.`;
+
+    const userPrompt = `Here are the soul virtue profiles of a team (${profiles.length} members):
+
+${profileList}
+
+Team strengths (highest avg virtues): ${teamStrengths}
+Team growth areas (lowest avg virtues): ${teamWeaknesses}
+
+Please analyze this team's dynamics. How can their virtue profiles be leveraged for peak performance? What are the blind spots? How should they structure collaboration?`;
+
+    return this.chat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], 3000);
+  }
 }

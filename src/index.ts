@@ -69,6 +69,51 @@ export default {
         return await handleGrowthPlan(request, env);
       }
 
+      // Share routes
+      if (path === '/api/share/create' && request.method === 'POST') {
+        return await handleShareCreate(request, env);
+      }
+
+      if (path.startsWith('/api/share/') && request.method === 'GET') {
+        const shareId = path.split('/api/share/')[1];
+        if (shareId) return await handleShareGet(shareId, env);
+      }
+
+      // Family circle routes
+      if (path === '/api/family/create' && request.method === 'POST') {
+        return await handleFamilyCreate(request, env);
+      }
+
+      if (path === '/api/family/join' && request.method === 'POST') {
+        return await handleFamilyJoin(request, env);
+      }
+
+      if (path === '/api/family/analyze' && request.method === 'POST') {
+        return await handleFamilyAnalyze(request, env);
+      }
+
+      // Couple match routes
+      if (path === '/api/couple/match' && request.method === 'POST') {
+        return await handleCoupleMatch(request, env);
+      }
+
+      if (path === '/api/couple/analyze' && request.method === 'POST') {
+        return await handleCoupleAnalyze(request, env);
+      }
+
+      // Team building routes
+      if (path === '/api/team/create' && request.method === 'POST') {
+        return await handleTeamCreate(request, env);
+      }
+
+      if (path === '/api/team/add-member' && request.method === 'POST') {
+        return await handleTeamAddMember(request, env);
+      }
+
+      if (path === '/api/team/analyze' && request.method === 'POST') {
+        return await handleTeamAnalyze(request, env);
+      }
+
       // Health check
       if (path === '/api/health') {
         return jsonResponse({ status: 'ok', timestamp: new Date().toISOString() });
@@ -338,5 +383,451 @@ async function handleGrowthPlan(request: Request, env: Env): Promise<Response> {
   } catch (error) {
     console.error('DeepSeek API error:', error);
     return jsonResponse({ error: 'Failed to generate growth plan' }, 500);
+  }
+}
+
+// ============================================================
+// SHARE ENDPOINTS
+// ============================================================
+
+// Create a shareable link for a quiz result
+async function handleShareCreate(request: Request, env: Env): Promise<Response> {
+  const { quizId } = await request.json() as { quizId: string };
+
+  if (!quizId) {
+    return jsonResponse({ error: 'Missing quiz ID' }, 400);
+  }
+
+  const quizData = await env.QUIZ_KV.get(quizId);
+  if (!quizData) {
+    return jsonResponse({ error: 'Quiz not found' }, 404);
+  }
+
+  const quiz = JSON.parse(quizData);
+
+  if (!quiz.result) {
+    return jsonResponse({ error: 'Quiz not completed yet' }, 400);
+  }
+
+  const shareId = generateId();
+
+  await env.QUIZ_KV.put(`share:${shareId}`, JSON.stringify({
+    shareId,
+    quizId,
+    result: quiz.result,
+    summary: quiz.report || null,
+    createdAt: new Date().toISOString()
+  }), { expirationTtl: 604800 });
+
+  return jsonResponse({
+    shareId,
+    shareUrl: `https://soulvirtues-api.fuyuanzeng520.workers.dev/api/share/${shareId}`
+  });
+}
+
+// Get a shared result by share ID
+async function handleShareGet(shareId: string, env: Env): Promise<Response> {
+  const shareData = await env.QUIZ_KV.get(`share:${shareId}`);
+
+  if (!shareData) {
+    return jsonResponse({ error: 'Shared result not found or expired' }, 404);
+  }
+
+  const share = JSON.parse(shareData);
+
+  return jsonResponse({
+    shareId: share.shareId,
+    result: share.result,
+    summary: share.summary,
+    createdAt: share.createdAt
+  });
+}
+
+// ============================================================
+// FAMILY CIRCLE ENDPOINTS
+// ============================================================
+
+// Create a family circle
+async function handleFamilyCreate(request: Request, env: Env): Promise<Response> {
+  const { quizId, name } = await request.json() as { quizId: string; name: string };
+
+  if (!quizId) {
+    return jsonResponse({ error: 'Missing quiz ID' }, 400);
+  }
+
+  const quizData = await env.QUIZ_KV.get(quizId);
+  if (!quizData) {
+    return jsonResponse({ error: 'Quiz not found' }, 404);
+  }
+
+  const quiz = JSON.parse(quizData);
+
+  if (!quiz.result) {
+    return jsonResponse({ error: 'Quiz not completed yet' }, 400);
+  }
+
+  const familyId = generateId();
+  const memberName = name || 'Member 1';
+
+  await env.QUIZ_KV.put(`family:${familyId}`, JSON.stringify({
+    familyId,
+    members: [{
+      name: memberName,
+      quizId,
+      percentages: quiz.result.percentages,
+      primaryVirtue: quiz.result.primaryVirtue,
+      secondaryVirtue: quiz.result.secondaryVirtue,
+      joinedAt: new Date().toISOString()
+    }],
+    createdAt: new Date().toISOString()
+  }), { expirationTtl: 604800 });
+
+  return jsonResponse({
+    familyId,
+    members: [{ name: memberName, primaryVirtue: quiz.result.primaryVirtue }],
+    message: 'Family circle created. Share the familyId to invite others.'
+  });
+}
+
+// Join an existing family circle
+async function handleFamilyJoin(request: Request, env: Env): Promise<Response> {
+  const { familyId, quizId, name } = await request.json() as {
+    familyId: string; quizId: string; name: string;
+  };
+
+  if (!familyId || !quizId) {
+    return jsonResponse({ error: 'Missing required fields' }, 400);
+  }
+
+  const familyData = await env.QUIZ_KV.get(`family:${familyId}`);
+  if (!familyData) {
+    return jsonResponse({ error: 'Family circle not found' }, 404);
+  }
+
+  const quizData = await env.QUIZ_KV.get(quizId);
+  if (!quizData) {
+    return jsonResponse({ error: 'Quiz not found' }, 404);
+  }
+
+  const family = JSON.parse(familyData);
+  const quiz = JSON.parse(quizData);
+
+  if (!quiz.result) {
+    return jsonResponse({ error: 'Quiz not completed yet' }, 400);
+  }
+
+  if (family.members.some((m: any) => m.quizId === quizId)) {
+    return jsonResponse({ error: 'This quiz result is already in the family circle' }, 400);
+  }
+
+  if (family.members.length >= 10) {
+    return jsonResponse({ error: 'Family circle is full (max 10 members)' }, 400);
+  }
+
+  const memberName = name || `Member ${family.members.length + 1}`;
+
+  family.members.push({
+    name: memberName,
+    quizId,
+    percentages: quiz.result.percentages,
+    primaryVirtue: quiz.result.primaryVirtue,
+    secondaryVirtue: quiz.result.secondaryVirtue,
+    joinedAt: new Date().toISOString()
+  });
+
+  await env.QUIZ_KV.put(`family:${familyId}`, JSON.stringify(family), { expirationTtl: 604800 });
+
+  return jsonResponse({
+    familyId,
+    memberCount: family.members.length,
+    members: family.members.map((m: any) => ({ name: m.name, primaryVirtue: m.primaryVirtue })),
+    message: `${memberName} joined the family circle!`
+  });
+}
+
+// Generate AI family analysis
+async function handleFamilyAnalyze(request: Request, env: Env): Promise<Response> {
+  const { familyId } = await request.json() as { familyId: string };
+
+  if (!familyId) {
+    return jsonResponse({ error: 'Missing family ID' }, 400);
+  }
+
+  const familyData = await env.QUIZ_KV.get(`family:${familyId}`);
+  if (!familyData) {
+    return jsonResponse({ error: 'Family circle not found' }, 404);
+  }
+
+  const family = JSON.parse(familyData);
+
+  if (family.members.length < 2) {
+    return jsonResponse({ error: 'Need at least 2 members for family analysis' }, 400);
+  }
+
+  const deepseek = new DeepSeekAPI(env.DEEPSEEK_API_KEY, env.DEEPSEEK_API_URL);
+
+  try {
+    const report = await deepseek.generateFamilyReport(
+      family.members.map((m: any) => ({ name: m.name, percentages: m.percentages }))
+    );
+
+    family.report = report;
+    family.reportGeneratedAt = new Date().toISOString();
+    await env.QUIZ_KV.put(`family:${familyId}`, JSON.stringify(family), { expirationTtl: 604800 });
+
+    return jsonResponse({ familyId, report, memberCount: family.members.length });
+  } catch (error) {
+    console.error('DeepSeek API error:', error);
+    return jsonResponse({ error: 'Failed to generate family analysis' }, 500);
+  }
+}
+
+// ============================================================
+// COUPLE MATCH ENDPOINTS
+// ============================================================
+
+// Compare two quiz results for couple compatibility
+async function handleCoupleMatch(request: Request, env: Env): Promise<Response> {
+  const { quizIdA, quizIdB, nameA, nameB } = await request.json() as {
+    quizIdA: string; quizIdB: string; nameA?: string; nameB?: string;
+  };
+
+  if (!quizIdA || !quizIdB) {
+    return jsonResponse({ error: 'Missing both quiz IDs' }, 400);
+  }
+
+  const [quizDataA, quizDataB] = await Promise.all([
+    env.QUIZ_KV.get(quizIdA),
+    env.QUIZ_KV.get(quizIdB)
+  ]);
+
+  if (!quizDataA || !quizDataB) {
+    return jsonResponse({ error: 'One or both quizzes not found' }, 404);
+  }
+
+  const quizA = JSON.parse(quizDataA);
+  const quizB = JSON.parse(quizDataB);
+
+  if (!quizA.result || !quizB.result) {
+    return jsonResponse({ error: 'Both quizzes must be completed' }, 400);
+  }
+
+  const percentagesA = quizA.result.percentages as Record<string, number>;
+  const percentagesB = quizB.result.percentages as Record<string, number>;
+  const virtues = Object.keys(percentagesA);
+  let totalDiff = 0;
+  const virtueCompatibility: Record<string, number> = {};
+
+  for (const virtue of virtues) {
+    const diff = Math.abs(percentagesA[virtue] - percentagesB[virtue]);
+    totalDiff += diff;
+    virtueCompatibility[virtue] = Math.round(100 - diff);
+  }
+
+  const overallCompatibility = Math.round(100 - (totalDiff / virtues.length));
+  const complementaryVirtues = virtues.filter(v => virtueCompatibility[v] >= 80);
+  const frictionVirtues = virtues.filter(v => virtueCompatibility[v] < 50);
+
+  return jsonResponse({
+    matchId: generateId(),
+    personA: { name: nameA || 'Person A', percentages: quizA.result.percentages, primaryVirtue: quizA.result.primaryVirtue },
+    personB: { name: nameB || 'Person B', percentages: quizB.result.percentages, primaryVirtue: quizB.result.primaryVirtue },
+    compatibility: {
+      overall: overallCompatibility,
+      byVirtue: virtueCompatibility,
+      complementary: complementaryVirtues,
+      frictionPoints: frictionVirtues
+    }
+  });
+}
+
+// Generate AI couple compatibility analysis
+async function handleCoupleAnalyze(request: Request, env: Env): Promise<Response> {
+  const { quizIdA, quizIdB, nameA, nameB } = await request.json() as {
+    quizIdA: string; quizIdB: string; nameA?: string; nameB?: string;
+  };
+
+  if (!quizIdA || !quizIdB) {
+    return jsonResponse({ error: 'Missing both quiz IDs' }, 400);
+  }
+
+  const [quizDataA, quizDataB] = await Promise.all([
+    env.QUIZ_KV.get(quizIdA),
+    env.QUIZ_KV.get(quizIdB)
+  ]);
+
+  if (!quizDataA || !quizDataB) {
+    return jsonResponse({ error: 'One or both quizzes not found' }, 404);
+  }
+
+  const quizA = JSON.parse(quizDataA);
+  const quizB = JSON.parse(quizDataB);
+
+  if (!quizA.result || !quizB.result) {
+    return jsonResponse({ error: 'Both quizzes must be completed' }, 400);
+  }
+
+  const deepseek = new DeepSeekAPI(env.DEEPSEEK_API_KEY, env.DEEPSEEK_API_URL);
+
+  try {
+    const report = await deepseek.generateCoupleMatchReport(
+      quizA.result.percentages, nameA || 'Person A',
+      quizB.result.percentages, nameB || 'Person B'
+    );
+
+    const coupleId = generateId();
+    await env.QUIZ_KV.put(`couple:${coupleId}`, JSON.stringify({
+      coupleId, quizIdA, quizIdB, report,
+      createdAt: new Date().toISOString()
+    }), { expirationTtl: 604800 });
+
+    return jsonResponse({ coupleId, report });
+  } catch (error) {
+    console.error('DeepSeek API error:', error);
+    return jsonResponse({ error: 'Failed to generate couple analysis' }, 500);
+  }
+}
+
+// ============================================================
+// TEAM BUILDING ENDPOINTS
+// ============================================================
+
+// Create a team for team building analysis
+async function handleTeamCreate(request: Request, env: Env): Promise<Response> {
+  const { quizId, name, teamName } = await request.json() as {
+    quizId: string; name: string; teamName?: string;
+  };
+
+  if (!quizId) {
+    return jsonResponse({ error: 'Missing quiz ID' }, 400);
+  }
+
+  const quizData = await env.QUIZ_KV.get(quizId);
+  if (!quizData) {
+    return jsonResponse({ error: 'Quiz not found' }, 404);
+  }
+
+  const quiz = JSON.parse(quizData);
+
+  if (!quiz.result) {
+    return jsonResponse({ error: 'Quiz not completed yet' }, 400);
+  }
+
+  const teamId = generateId();
+  const memberName = name || 'Member 1';
+
+  await env.QUIZ_KV.put(`team:${teamId}`, JSON.stringify({
+    teamId,
+    teamName: teamName || 'My Team',
+    members: [{
+      name: memberName,
+      quizId,
+      percentages: quiz.result.percentages,
+      primaryVirtue: quiz.result.primaryVirtue,
+      secondaryVirtue: quiz.result.secondaryVirtue,
+      addedAt: new Date().toISOString()
+    }],
+    createdAt: new Date().toISOString()
+  }), { expirationTtl: 604800 });
+
+  return jsonResponse({
+    teamId,
+    teamName: teamName || 'My Team',
+    members: [{ name: memberName, primaryVirtue: quiz.result.primaryVirtue }],
+    message: 'Team created. Share the teamId to invite others.'
+  });
+}
+
+// Add a member to an existing team
+async function handleTeamAddMember(request: Request, env: Env): Promise<Response> {
+  const { teamId, quizId, name } = await request.json() as {
+    teamId: string; quizId: string; name: string;
+  };
+
+  if (!teamId || !quizId) {
+    return jsonResponse({ error: 'Missing required fields' }, 400);
+  }
+
+  const teamData = await env.QUIZ_KV.get(`team:${teamId}`);
+  if (!teamData) {
+    return jsonResponse({ error: 'Team not found' }, 404);
+  }
+
+  const quizData = await env.QUIZ_KV.get(quizId);
+  if (!quizData) {
+    return jsonResponse({ error: 'Quiz not found' }, 404);
+  }
+
+  const team = JSON.parse(teamData);
+  const quiz = JSON.parse(quizData);
+
+  if (!quiz.result) {
+    return jsonResponse({ error: 'Quiz not completed yet' }, 400);
+  }
+
+  if (team.members.some((m: any) => m.quizId === quizId)) {
+    return jsonResponse({ error: 'This quiz result is already in the team' }, 400);
+  }
+
+  if (team.members.length >= 20) {
+    return jsonResponse({ error: 'Team is full (max 20 members)' }, 400);
+  }
+
+  const memberName = name || `Member ${team.members.length + 1}`;
+
+  team.members.push({
+    name: memberName,
+    quizId,
+    percentages: quiz.result.percentages,
+    primaryVirtue: quiz.result.primaryVirtue,
+    secondaryVirtue: quiz.result.secondaryVirtue,
+    addedAt: new Date().toISOString()
+  });
+
+  await env.QUIZ_KV.put(`team:${teamId}`, JSON.stringify(team), { expirationTtl: 604800 });
+
+  return jsonResponse({
+    teamId,
+    teamName: team.teamName,
+    memberCount: team.members.length,
+    members: team.members.map((m: any) => ({ name: m.name, primaryVirtue: m.primaryVirtue })),
+    message: `${memberName} joined the team!`
+  });
+}
+
+// Generate AI team building analysis
+async function handleTeamAnalyze(request: Request, env: Env): Promise<Response> {
+  const { teamId } = await request.json() as { teamId: string };
+
+  if (!teamId) {
+    return jsonResponse({ error: 'Missing team ID' }, 400);
+  }
+
+  const teamData = await env.QUIZ_KV.get(`team:${teamId}`);
+  if (!teamData) {
+    return jsonResponse({ error: 'Team not found' }, 404);
+  }
+
+  const team = JSON.parse(teamData);
+
+  if (team.members.length < 2) {
+    return jsonResponse({ error: 'Need at least 2 members for team analysis' }, 400);
+  }
+
+  const deepseek = new DeepSeekAPI(env.DEEPSEEK_API_KEY, env.DEEPSEEK_API_URL);
+
+  try {
+    const report = await deepseek.generateTeamReport(
+      team.members.map((m: any) => ({ name: m.name, percentages: m.percentages }))
+    );
+
+    team.report = report;
+    team.reportGeneratedAt = new Date().toISOString();
+    await env.QUIZ_KV.put(`team:${teamId}`, JSON.stringify(team), { expirationTtl: 604800 });
+
+    return jsonResponse({ teamId, teamName: team.teamName, report, memberCount: team.members.length });
+  } catch (error) {
+    console.error('DeepSeek API error:', error);
+    return jsonResponse({ error: 'Failed to generate team analysis' }, 500);
   }
 }
